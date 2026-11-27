@@ -1,0 +1,14 @@
+backend/instance/
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/__pycache__/
+backend/tests/__pycache__/
+backend/.venv/
+/.venv/
+web/node_modules/
+web/.next/
+web/.env*
+!web/.env.example
+__pycache__/
+*.py[cod]

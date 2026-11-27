@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run The Nail Nurse (F5)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}\\scripts\\dev-stack.mjs",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "env": {
+        "PYTHON": "${command:python.interpreterPath}"
+      }
+    }
+  ]
+}

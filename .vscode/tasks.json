@@ -1,0 +1,25 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Create owner account",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "flask", "--app", "app", "setup-admin"],
+      "options": {
+        "cwd": "${workspaceFolder}\\backend"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Reset owner password",
+      "type": "process",
+      "command": "${command:python.interpreterPath}",
+      "args": ["-m", "flask", "--app", "app", "reset-admin-password"],
+      "options": {
+        "cwd": "${workspaceFolder}\\backend"
+      },
+      "problemMatcher": []
+    }
+  ]
+}
