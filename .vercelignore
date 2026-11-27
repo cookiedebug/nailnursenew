@@ -1,0 +1,6 @@
+backend/instance/**
+backend/.env
+backend/.env.*
+web/.env*
+.env
+.env.*

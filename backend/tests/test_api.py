@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from datetime import date, datetime, timedelta, timezone
@@ -285,6 +286,23 @@ class BookingApiTests(unittest.TestCase):
             "http://127.0.0.1:3000",
         )
 
+    def test_same_origin_requests_work_on_vercel_preview_domains(self):
+        origin = "https://nailnurse-preview.vercel.app"
+        response = self.client.post(
+            "/api/auth/register",
+            json={
+                "full_name": "Ama Client",
+                "email": "ama@example.com",
+                "phone": "0241234567",
+                "password": "ClientPasswordStrong123!",
+                "accepted_terms": True,
+            },
+            headers={"Origin": origin},
+            base_url=origin,
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.headers["Access-Control-Allow-Origin"], origin)
+
     def test_admin_setup_prompts_for_and_hashes_the_default_admin_password(self):
         setup_dir = tempfile.TemporaryDirectory()
         database_path = Path(setup_dir.name) / "setup.sqlite3"
@@ -343,6 +361,39 @@ class BookingApiTests(unittest.TestCase):
         self.assertEqual(invalid_month.status_code, 400)
         factory = self.app.extensions["db_session"]
         self.assertEqual(factory.query(Availability).filter_by(date=date.fromisoformat(self.book_date)).count(), 1)
+
+
+class VercelConfigurationTests(unittest.TestCase):
+    def test_vercel_requires_postgresql_and_a_persistent_secret(self):
+        with patch.dict(os.environ, {"VERCEL": "1"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "hosted PostgreSQL"):
+                create_app()
+
+            with patch.dict(os.environ, {"DATABASE_URL": "sqlite:///local.sqlite3"}):
+                with self.assertRaisesRegex(RuntimeError, "hosted PostgreSQL"):
+                    create_app()
+
+            with patch.dict(os.environ, {"DATABASE_URL": "postgresql://db.example/nailnurse"}):
+                with self.assertRaisesRegex(RuntimeError, "SECRET_KEY"):
+                    create_app()
+
+    def test_vercel_uses_psycopg_and_secure_cookies_without_creating_schema(self):
+        with patch.dict(
+            os.environ,
+            {
+                "VERCEL": "1",
+                "DATABASE_URL": "postgresql://db.example/nailnurse",
+                "SECRET_KEY": "test-secret",
+            },
+            clear=True,
+        ):
+            app = create_app()
+        self.assertEqual(app.config["DATABASE_URL"], "postgresql+psycopg://db.example/nailnurse")
+        self.assertTrue(app.config["COOKIE_SECURE"])
+        self.assertFalse(app.config["AUTO_CREATE_SCHEMA"])
+        factory = app.extensions["db_session"]
+        factory.remove()
+        factory.bind.dispose()
 
 
 if __name__ == "__main__":

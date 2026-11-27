@@ -149,16 +149,35 @@ def availability_payload(record: Availability | None, requested_date: date) -> d
 def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     app = Flask(__name__)
     default_db = Path(__file__).parent / "instance" / "nailnurse.sqlite3"
-    default_db.parent.mkdir(parents=True, exist_ok=True)
+    is_vercel = os.getenv("VERCEL") == "1"
     app.config.from_mapping(
         DATABASE_URL=os.getenv("DATABASE_URL", f"sqlite:///{default_db.as_posix()}"),
         SECRET_KEY=os.getenv("SECRET_KEY", secrets.token_hex(32)),
         FRONTEND_ORIGIN=os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"),
-        COOKIE_SECURE=os.getenv("COOKIE_SECURE", "false").lower() == "true",
+        COOKIE_SECURE=os.getenv("COOKIE_SECURE", "true" if is_vercel else "false").lower() == "true",
         SESSION_COOKIE_SAMESITE="Lax",
+        AUTO_CREATE_SCHEMA=not is_vercel,
     )
     if test_config:
         app.config.update(test_config)
+
+    database_url = app.config["DATABASE_URL"]
+    secret_key = os.getenv("SECRET_KEY")
+    if is_vercel:
+        if not isinstance(database_url, str) or not database_url.startswith(
+            ("postgres://", "postgresql://", "postgresql+psycopg://")
+        ):
+            raise RuntimeError("Set DATABASE_URL to a hosted PostgreSQL connection string on Vercel.")
+        if not secret_key and not (test_config and test_config.get("SECRET_KEY")):
+            raise RuntimeError("Set SECRET_KEY in the Vercel project environment.")
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+psycopg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    app.config["DATABASE_URL"] = database_url
+
+    if database_url.startswith("sqlite"):
+        default_db.parent.mkdir(parents=True, exist_ok=True)
 
     frontend_origins = {app.config["FRONTEND_ORIGIN"]}
     local_frontend_origins = {"http://localhost:3000", "http://127.0.0.1:3000"}
@@ -166,17 +185,23 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
         frontend_origins.update(local_frontend_origins)
 
     engine = create_engine(
-        app.config["DATABASE_URL"],
+        database_url,
         connect_args={"check_same_thread": False, "timeout": 20}
-        if app.config["DATABASE_URL"].startswith("sqlite")
+        if database_url.startswith("sqlite")
         else {},
     )
     factory = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
-    Base.metadata.create_all(engine)
+    if app.config["AUTO_CREATE_SCHEMA"]:
+        Base.metadata.create_all(engine)
     app.extensions["db_session"] = factory
 
     def db():
         return factory()
+
+    def origin_is_allowed(origin: str | None) -> bool:
+        return bool(origin) and (
+            origin in frontend_origins or origin == request.host_url.rstrip("/")
+        )
 
     @app.teardown_appcontext
     def remove_session(_error: BaseException | None = None) -> None:
@@ -186,7 +211,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     def enforce_origin_and_load_user():
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             origin = request.headers.get("Origin")
-            if origin not in frontend_origins:
+            if not origin_is_allowed(origin):
                 return jsonify(error="Request origin is not allowed."), 403
 
         g.current_user = None
@@ -205,7 +230,7 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.after_request
     def set_security_headers(response):
         origin = request.headers.get("Origin")
-        if origin in frontend_origins:
+        if origin_is_allowed(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -256,6 +281,12 @@ def create_app(test_config: dict[str, Any] | None = None) -> Flask:
     @app.get("/api/health")
     def health():
         return jsonify(status="ok")
+
+    @app.cli.command("init-db")
+    def init_db():
+        """Create missing database tables without changing existing data."""
+        Base.metadata.create_all(engine)
+        click.echo("Database tables are ready.")
 
     @app.post("/api/auth/register")
     def register():

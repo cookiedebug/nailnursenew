@@ -1,6 +1,7 @@
 # The Nail Nurse
 
-The project has a Next.js client website and a Flask API backed by SQLite.
+The project has a Next.js client website and a Flask API. Local development
+uses SQLite; the Vercel deployment uses hosted PostgreSQL.
 
 ## Requirements
 
@@ -31,8 +32,6 @@ administrator email and set a new password at the hidden prompts.
 For local environment overrides, copy `backend/.env.example` to `backend/.env`
 before running Flask.
 
-For production, set a private random `SECRET_KEY`, set `FRONTEND_ORIGIN` to the
-deployed Next.js origin, and set `COOKIE_SECURE=true` when serving over HTTPS.
 Never commit production secrets or the SQLite database.
 
 ## Start Next.js
@@ -47,8 +46,39 @@ npm run dev
 Open `http://localhost:3000`. To use another API origin, create `web/.env.local`
 with `NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api`.
 For local development, the API accepts both `localhost:3000` and
-`127.0.0.1:3000`; production requests are limited to the configured frontend
-origin.
+`127.0.0.1:3000`. In production, the frontend uses `/api` on the same domain.
+
+## Deploy frontend and API together on Vercel
+
+The root `vercel.json` configures two Vercel Services in one project: the
+Next.js app in `web/` and the Flask app in `backend/`. Requests under `/api`
+are routed to Flask; all other paths are routed to Next.js.
+
+1. Import this repository into Vercel and set the project Root Directory to the
+   repository root. The configuration uses Vercel Services (currently Beta).
+2. Create a hosted PostgreSQL database and add these Vercel environment
+   variables for Production (and Preview if previews should work):
+   - `DATABASE_URL`: the provider's PostgreSQL connection URL.
+   - `SECRET_KEY`: a long, random, private value.
+   - `COOKIE_SECURE`: `true`.
+   - `FRONTEND_ORIGIN`: the deployed site's full origin, for example
+     `https://my-project.vercel.app`.
+3. Before using the deployed API, initialize the PostgreSQL schema and create
+   the administrator. From `backend/`, with the production database URL and
+   secret configured in your local shell:
+
+   ```powershell
+   python -m pip install -r requirements.txt
+   python -m flask --app app init-db
+   python -m flask --app app setup-admin
+   ```
+
+`init-db` creates missing tables only; it does not drop tables or modify
+existing records. The deployed backend refuses to start without a PostgreSQL
+URL and `SECRET_KEY`, and does not create schema during serverless startup.
+The local SQLite database is excluded from Vercel uploads and is not copied,
+deleted, or modified by this deployment setup. Moving existing SQLite records
+to PostgreSQL is a separate data migration and is not performed automatically.
 
 ## Run from VS Code
 

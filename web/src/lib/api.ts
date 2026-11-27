@@ -1,7 +1,9 @@
-const defaultApiBase =
-  typeof window !== "undefined" && window.location.hostname === "127.0.0.1"
-    ? "http://127.0.0.1:5000/api"
-    : "http://localhost:5000/api";
+const isLocalDevelopment =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const defaultApiBase = isLocalDevelopment
+  ? `http://${window.location.hostname}:5000/api`
+  : "/api";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? defaultApiBase;
 
